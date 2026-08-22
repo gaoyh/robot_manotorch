@@ -185,7 +185,7 @@ class ManoBackendService:
         context = self._context(side)
         angles = _as_row_tensor(ee_angles, 48, "ee_angles").view(1, 16, 3)
         pose = context.axis_fk.compose(angles)
-        return _to_list(pose[0])
+        return _to_list(pose.reshape(1, -1)[0])
 
     @staticmethod
     def _extract_axes(t_g_a: torch.Tensor) -> dict[str, torch.Tensor]:

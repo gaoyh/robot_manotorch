@@ -1,5 +1,5 @@
-import * as THREE from "./vendor/three.module.js?v=20260822-7";
-import { OrbitControls } from "./vendor/OrbitControls.js?v=20260822-7";
+import * as THREE from "./vendor/three.module.js?v=20260822-11";
+import { OrbitControls } from "./vendor/OrbitControls.js?v=20260822-11";
 
 const poseCount = 48;
 const betaCount = 10;
@@ -154,12 +154,13 @@ function flattenEeAngles() {
 
 function setEeAnglesFromFlat(flat) {
   if (!Array.isArray(flat)) return;
+  const values = flat.flat ? flat.flat() : flat;
   const next = [];
   for (let i = 0; i < eeCount; i++) {
     next.push([
-      Number(flat[i * 3 + 0] ?? 0),
-      Number(flat[i * 3 + 1] ?? 0),
-      Number(flat[i * 3 + 2] ?? 0),
+      Number(values[i * 3 + 0] ?? 0),
+      Number(values[i * 3 + 1] ?? 0),
+      Number(values[i * 3 + 2] ?? 0),
     ]);
   }
   state.eeAngles = next;
@@ -372,7 +373,12 @@ function buildWebSocket() {
     if (msg.type === "pose") {
       state.pose = Array.isArray(msg.pose) ? msg.pose.slice() : state.pose;
       syncSliders("poseSliderInputs", state.pose);
-      scheduleSolve();
+      sendStream({
+        type: "solve",
+        side: state.side,
+        pose: state.pose,
+        betas: state.betas,
+      });
       return;
     }
     if (msg.type === "result") {
@@ -416,41 +422,34 @@ function scheduleCompose() {
   state.pendingCompose = true;
   requestAnimationFrame(() => {
     state.pendingCompose = false;
-    sendStream({
-      type: "compose",
-      ee_angles: flattenEeAngles(),
-    });
+    composeOnce().catch((err) => setStatus(String(err)));
+  });
+}
+
+async function composeOnce() {
+  sendStream({
+    type: "compose",
+    side: state.side,
+    ee_angles: flattenEeAngles(),
   });
 }
 
 async function loadOnce() {
-  const data = await postJson("/api/load", {
+  sendStream({
+    type: "hello",
     side: state.side,
     pose: state.pose,
     betas: state.betas,
   });
-  setStatus(data.meta);
-  if (data.ee_angles) {
-    setEeAnglesFromFlat(data.ee_angles.flat ? data.ee_angles.flat() : data.ee_angles);
-    renderSelectedJointPanel();
-  }
-  syncSliders("poseSliderInputs", data.pose || state.pose);
-  updateScene(data);
 }
 
 async function solveOnce() {
-  const data = await postJson("/api/solve", {
+  sendStream({
+    type: "solve",
     side: state.side,
     pose: state.pose,
     betas: state.betas,
   });
-  setStatus(data.meta);
-  if (data.ee_angles) {
-    setEeAnglesFromFlat(data.ee_angles.flat ? data.ee_angles.flat() : data.ee_angles);
-    renderSelectedJointPanel();
-  }
-  syncSliders("poseSliderInputs", data.pose || state.pose);
-  updateScene(data);
 }
 
 function updateScene(payload) {

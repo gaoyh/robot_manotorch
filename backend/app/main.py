@@ -25,9 +25,17 @@ from .schemas import (
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Hand Editor Backend", version="0.1.0")
+    cors_origins = os.environ.get("CORS_ALLOW_ORIGINS")
+    if cors_origins:
+        allow_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+    else:
+        allow_origins = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=os.environ.get("CORS_ALLOW_ORIGINS", "*").split(","),
+        allow_origins=allow_origins,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
