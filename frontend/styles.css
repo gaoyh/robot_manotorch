@@ -29,10 +29,32 @@ html, body {
   inset: 0;
 }
 
+.viewport-tooltip {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  display: none;
+  min-width: 140px;
+  max-width: 240px;
+  padding: 6px 8px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-line;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
 .row {
   display: grid;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.row.inline {
+  grid-template-columns: 1fr 1fr;
 }
 
 input, select, button, pre {
@@ -58,6 +80,58 @@ button {
 .sliders {
   display: grid;
   gap: 8px;
+}
+
+.advanced-section {
+  margin: 8px 0 12px;
+}
+
+.advanced-section summary {
+  cursor: pointer;
+  margin-bottom: 8px;
+  color: #cbd5e1;
+}
+
+.joint-tree {
+  display: grid;
+  gap: 6px;
+}
+
+.joint-tree .tree-item {
+  display: grid;
+  gap: 6px;
+}
+
+.joint-tree .tree-children {
+  display: grid;
+  gap: 6px;
+  padding-left: 14px;
+  border-left: 1px solid #334155;
+}
+
+.joint-tree button {
+  text-align: left;
+}
+
+.joint-tree button.selected {
+  background: #1d4ed8;
+  border-color: #60a5fa;
+}
+
+.wrist-host {
+  display: grid;
+  gap: 6px;
+}
+
+.selected-info {
+  margin-bottom: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.joint-tree button:hover,
+.wrist-host button:hover {
+  border-color: #60a5fa;
 }
 
 .slider {

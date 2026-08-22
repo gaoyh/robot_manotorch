@@ -1,29 +1,117 @@
-import * as THREE from "./vendor/three.module.js?v=20260822-1";
-import { OrbitControls } from "./vendor/OrbitControls.js?v=20260822-1";
+import * as THREE from "./vendor/three.module.js?v=20260822-5";
+import { OrbitControls } from "./vendor/OrbitControls.js?v=20260822-5";
 
 const poseCount = 48;
 const betaCount = 10;
+const eeCount = 16;
+const hoverJointCount = 21;
+const editableJointCount = 16;
+const editableOutputIndices = [0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19];
+const articulationByOutput = {
+  0: 0,
+  1: 1,
+  2: 2,
+  3: 3,
+  5: 4,
+  6: 5,
+  7: 6,
+  9: 7,
+  10: 8,
+  11: 9,
+  13: 10,
+  14: 11,
+  15: 12,
+  17: 13,
+  18: 14,
+  19: 15,
+};
+
+const JOINT_TREE = [
+  { index: 1, label: "Thumb / base", children: [
+    { index: 2, label: "Thumb / middle", children: [] },
+    { index: 3, label: "Thumb / tip", children: [] },
+  ]},
+  { index: 5, label: "Index / base", children: [
+    { index: 6, label: "Index / middle", children: [] },
+    { index: 7, label: "Index / tip", children: [] },
+  ]},
+  { index: 9, label: "Middle / base", children: [
+    { index: 10, label: "Middle / middle", children: [] },
+    { index: 11, label: "Middle / tip", children: [] },
+  ]},
+  { index: 13, label: "Ring / base", children: [
+    { index: 14, label: "Ring / middle", children: [] },
+    { index: 15, label: "Ring / tip", children: [] },
+  ]},
+  { index: 17, label: "Pinky / base", children: [
+    { index: 18, label: "Pinky / middle", children: [] },
+    { index: 19, label: "Pinky / tip", children: [] },
+  ]},
+];
+
+const JOINT_NAMES = [
+  "Wrist",
+  "Thumb / base",
+  "Thumb / middle",
+  "Thumb / tip",
+  "Thumb / tip sample",
+  "Index / base",
+  "Index / middle",
+  "Index / tip",
+  "Index / tip sample",
+  "Middle / base",
+  "Middle / middle",
+  "Middle / tip",
+  "Middle / tip sample",
+  "Ring / base",
+  "Ring / middle",
+  "Ring / tip",
+  "Ring / tip sample",
+  "Pinky / base",
+  "Pinky / middle",
+  "Pinky / tip",
+  "Pinky / tip sample",
+];
 
 const state = {
   backendUrl: document.getElementById("backendUrl").value.trim(),
   side: document.getElementById("side").value,
   pose: Array(poseCount).fill(0),
   betas: Array(betaCount).fill(0),
+  eeAngles: Array.from({ length: eeCount }, () => [0, 0, 0]),
+  selectedJoint: 0,
   ws: null,
   three: null,
   pendingStream: null,
+  pendingCompose: false,
+  pendingSolve: false,
+  poseSliderInputs: [],
+  betaSliderInputs: [],
+  latestAxes: null,
+  latestJoints: [],
+  dragState: null,
+  hoverJointIndex: null,
+  hoverAxisIndex: null,
 };
 
 const statusEl = document.getElementById("status");
 const poseRoot = document.getElementById("poseSliders");
 const betaRoot = document.getElementById("betaSliders");
+const jointTreeRoot = document.getElementById("jointTree");
+const selectedJointInfo = document.getElementById("selectedJointInfo");
+const selectedJointSliders = document.getElementById("selectedJointSliders");
+const viewportTooltip = document.getElementById("viewportTooltip");
+const wristHost = document.getElementById("wristHost");
 
 function setStatus(value) {
   statusEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
-function makeSliders(root, count, prefix, values, onChange) {
+function makeSliders(root, count, prefix, values, onChange, storeKey) {
   root.innerHTML = "";
+  if (storeKey) {
+    state[storeKey] = [];
+  }
   for (let i = 0; i < count; i++) {
     const wrap = document.createElement("div");
     wrap.className = "slider";
@@ -44,7 +132,194 @@ function makeSliders(root, count, prefix, values, onChange) {
     wrap.appendChild(label);
     wrap.appendChild(input);
     root.appendChild(wrap);
+    if (storeKey) {
+      state[storeKey].push({ input, label });
+    }
   }
+}
+
+function syncSliders(storeKey, values) {
+  const items = state[storeKey] || [];
+  items.forEach((item, i) => {
+    if (values[i] === undefined) return;
+    item.input.value = values[i];
+    item.label.querySelector(".val").textContent = Number(values[i]).toFixed(2);
+  });
+}
+
+function flattenEeAngles() {
+  return state.eeAngles.flat();
+}
+
+function setEeAnglesFromFlat(flat) {
+  if (!Array.isArray(flat)) return;
+  const next = [];
+  for (let i = 0; i < eeCount; i++) {
+    next.push([
+      Number(flat[i * 3 + 0] ?? 0),
+      Number(flat[i * 3 + 1] ?? 0),
+      Number(flat[i * 3 + 2] ?? 0),
+    ]);
+  }
+  state.eeAngles = next;
+}
+
+function selectedJointValues() {
+  const artIndex = articulationByOutput[state.selectedJoint] ?? 0;
+  return state.eeAngles[artIndex] || [0, 0, 0];
+}
+
+function renderSelectedJointPanel() {
+  const joint = flattenTree().find((node) => node.index === state.selectedJoint)
+    || { index: state.selectedJoint, label: jointLabel(state.selectedJoint) };
+  selectedJointInfo.textContent = `${joint.label} (#${joint.index})`;
+  selectedJointSliders.innerHTML = "";
+
+  const labels = ["twist", "spread", "bend"];
+  const values = selectedJointValues();
+  labels.forEach((name, axis) => {
+    const wrap = document.createElement("div");
+    wrap.className = "slider";
+    const label = document.createElement("label");
+    label.innerHTML = `<span>${name}</span><span class="val">${Number(values[axis] ?? 0).toFixed(2)}</span>`;
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = "-3.14";
+    input.max = "3.14";
+    input.step = "0.01";
+    input.value = values[axis] ?? 0;
+    input.addEventListener("input", () => {
+      const artIndex = articulationByOutput[state.selectedJoint] ?? 0;
+      state.eeAngles[artIndex][axis] = Number(input.value);
+      label.querySelector(".val").textContent = Number(input.value).toFixed(2);
+      scheduleCompose();
+    });
+    wrap.appendChild(label);
+    wrap.appendChild(input);
+    selectedJointSliders.appendChild(wrap);
+  });
+}
+
+function selectJoint(index) {
+  state.selectedJoint = index;
+  renderJointTree();
+  renderSelectedJointPanel();
+  updateGizmo();
+}
+
+function renderJointTreeNode(node, container, depth = 0) {
+  const item = document.createElement("div");
+  item.className = "tree-item";
+
+  const button = document.createElement("button");
+  button.textContent = node.label;
+  button.className = node.index === state.selectedJoint ? "selected" : "";
+  button.style.paddingLeft = `${8 + depth * 10}px`;
+  button.addEventListener("click", () => selectJoint(node.index));
+  item.appendChild(button);
+
+  if (node.children && node.children.length) {
+    const children = document.createElement("div");
+    children.className = "tree-children";
+    node.children.forEach((child) => renderJointTreeNode(child, children, depth + 1));
+    item.appendChild(children);
+  }
+
+  container.appendChild(item);
+}
+
+function renderWristButton() {
+  if (!wristHost) return;
+  wristHost.innerHTML = "";
+  const button = document.createElement("button");
+  button.textContent = "Wrist";
+  button.className = state.selectedJoint === 0 ? "selected" : "";
+  button.addEventListener("click", () => selectJoint(0));
+  wristHost.appendChild(button);
+}
+
+function renderTooltip(text, evt) {
+  if (!viewportTooltip) return;
+  if (!text) {
+    viewportTooltip.style.display = "none";
+    viewportTooltip.textContent = "";
+    return;
+  }
+  viewportTooltip.textContent = text;
+  viewportTooltip.style.display = "block";
+  viewportTooltip.style.left = `${evt.clientX - viewportTooltip.parentElement.getBoundingClientRect().left + 12}px`;
+  viewportTooltip.style.top = `${evt.clientY - viewportTooltip.parentElement.getBoundingClientRect().top + 12}px`;
+}
+
+function renderJointTree() {
+  jointTreeRoot.innerHTML = "";
+  JOINT_TREE.forEach((node) => renderJointTreeNode(node, jointTreeRoot));
+  renderWristButton();
+}
+
+function jointLabel(index) {
+  return JOINT_NAMES[index] || `Joint ${index}`;
+}
+
+function getAxisVector(axisIndex, jointIndex) {
+  const axes = state.latestAxes;
+  if (!axes) return null;
+  const axisName = ["back", "up", "left"][axisIndex];
+  const values = axes[axisName]?.[jointIndex];
+  if (!values) return null;
+  const vec = new THREE.Vector3(values[0], values[1], values[2]);
+  if (vec.lengthSq() === 0) return null;
+  return vec.normalize();
+}
+
+function getJointCenter(jointIndex) {
+  const joint = state.latestJoints[jointIndex];
+  if (!joint) return null;
+  return new THREE.Vector3(joint[0], joint[1], joint[2]);
+}
+
+function projectToPlane(vec, normal) {
+  return vec.clone().sub(normal.clone().multiplyScalar(vec.dot(normal)));
+}
+
+function signedAngleOnAxis(fromVec, toVec, axisVec) {
+  const from = fromVec.clone().normalize();
+  const to = toVec.clone().normalize();
+  const cross = new THREE.Vector3().crossVectors(from, to);
+  return Math.atan2(axisVec.dot(cross), from.dot(to));
+}
+
+function flattenTree(nodes = JOINT_TREE) {
+  return nodes.flatMap((node) => [node, ...(node.children ? flattenTree(node.children) : [])]);
+}
+
+function jointHitLabel(index) {
+  return `${jointLabel(index)} (#${index})`;
+}
+
+function pickNearestJointFromEvent(evt, indices = hoverJointIndices, thresholdPx = 24) {
+  if (!state.three || !state.latestJoints.length) return null;
+  const { camera, renderer } = state.three;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const y = evt.clientY - rect.top;
+  let best = null;
+  let bestDist = Infinity;
+  indices.forEach((index) => {
+    const joint = state.latestJoints[index];
+    if (!joint) return;
+    const v = new THREE.Vector3(joint[0], joint[1], joint[2]).project(camera);
+    const sx = (v.x * 0.5 + 0.5) * rect.width;
+    const sy = (-v.y * 0.5 + 0.5) * rect.height;
+    const dx = sx - x;
+    const dy = sy - y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = index;
+    }
+  });
+  return bestDist <= thresholdPx ? best : null;
 }
 
 function backendBase() {
@@ -85,7 +360,20 @@ function buildWebSocket() {
   state.ws.onmessage = (evt) => {
     const msg = JSON.parse(evt.data);
     setStatus(msg);
+    if (msg.type === "ready") {
+      return;
+    }
+    if (msg.type === "pose") {
+      state.pose = Array.isArray(msg.pose) ? msg.pose.slice() : state.pose;
+      syncSliders("poseSliderInputs", state.pose);
+      scheduleSolve();
+      return;
+    }
     if (msg.type === "result") {
+      if (msg.ee_angles) {
+        setEeAnglesFromFlat(msg.ee_angles.flat ? msg.ee_angles.flat() : msg.ee_angles);
+        renderSelectedJointPanel();
+      }
       updateScene(msg);
     }
   };
@@ -117,6 +405,18 @@ function scheduleSolve() {
   });
 }
 
+function scheduleCompose() {
+  if (state.pendingCompose) return;
+  state.pendingCompose = true;
+  requestAnimationFrame(() => {
+    state.pendingCompose = false;
+    sendStream({
+      type: "compose",
+      ee_angles: flattenEeAngles(),
+    });
+  });
+}
+
 async function loadOnce() {
   const data = await postJson("/api/load", {
     side: state.side,
@@ -124,6 +424,11 @@ async function loadOnce() {
     betas: state.betas,
   });
   setStatus(data.meta);
+  if (data.ee_angles) {
+    setEeAnglesFromFlat(data.ee_angles.flat ? data.ee_angles.flat() : data.ee_angles);
+    renderSelectedJointPanel();
+  }
+  syncSliders("poseSliderInputs", data.pose || state.pose);
   updateScene(data);
 }
 
@@ -134,6 +439,11 @@ async function solveOnce() {
     betas: state.betas,
   });
   setStatus(data.meta);
+  if (data.ee_angles) {
+    setEeAnglesFromFlat(data.ee_angles.flat ? data.ee_angles.flat() : data.ee_angles);
+    renderSelectedJointPanel();
+  }
+  syncSliders("poseSliderInputs", data.pose || state.pose);
   updateScene(data);
 }
 
@@ -142,6 +452,8 @@ function updateScene(payload) {
   const { scene, jointPoints, jointLines, mesh } = state.three;
 
   const points = payload.joints || [];
+  state.latestJoints = points;
+  state.latestAxes = payload.axes || null;
   if (!points.length) return;
 
   const posArray = new Float32Array(points.length * 3);
@@ -185,6 +497,8 @@ function updateScene(payload) {
   } else {
     mesh.visible = false;
   }
+
+  updateGizmo();
 }
 
 function initThree() {
@@ -214,6 +528,20 @@ function initThree() {
   const jointPoints = new THREE.Points(jointGeometry, jointMaterial);
   scene.add(jointPoints);
 
+  const selectedJointMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.006, 12, 12),
+    new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false, depthWrite: false })
+  );
+  selectedJointMarker.visible = false;
+  scene.add(selectedJointMarker);
+
+  const hoverJointMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.005, 12, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false })
+  );
+  hoverJointMarker.visible = false;
+  scene.add(hoverJointMarker);
+
   const lineGeometry = new THREE.BufferGeometry();
   const lineMaterial = new THREE.LineBasicMaterial({ color: 0x60a5fa });
   const jointLines = new THREE.LineSegments(lineGeometry, lineMaterial);
@@ -232,6 +560,160 @@ function initThree() {
   mesh.visible = false;
   scene.add(mesh);
 
+  const gizmoGroup = new THREE.Group();
+  const gizmoMeshes = [];
+  const gizmoPickMeshes = [];
+  const gizmoColors = [0xef4444, 0x22c55e, 0x3b82f6];
+  const gizmoRings = [
+    { axisIndex: 0, rotation: new THREE.Euler(0, Math.PI / 2, 0) },
+    { axisIndex: 1, rotation: new THREE.Euler(Math.PI / 2, 0, 0) },
+    { axisIndex: 2, rotation: new THREE.Euler(0, 0, 0) },
+  ];
+  gizmoRings.forEach((ring, idx) => {
+    const pickGeom = new THREE.TorusGeometry(1, 0.08, 12, 64);
+    const mat = new THREE.MeshBasicMaterial({
+      color: gizmoColors[idx],
+      transparent: true,
+      opacity: 0.02,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const pickMesh = new THREE.Mesh(pickGeom, mat);
+    pickMesh.renderOrder = 998;
+    pickMesh.rotation.copy(ring.rotation);
+    pickMesh.userData.axisIndex = ring.axisIndex;
+    gizmoGroup.add(pickMesh);
+    gizmoPickMeshes.push(pickMesh);
+
+    const geom = new THREE.TorusGeometry(1, 0.03, 12, 64);
+    const visMat = new THREE.MeshBasicMaterial({
+      color: gizmoColors[idx],
+      transparent: true,
+      opacity: 0.75,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geom, visMat);
+    mesh.renderOrder = 999;
+    mesh.rotation.copy(ring.rotation);
+    mesh.userData.axisIndex = ring.axisIndex;
+    gizmoGroup.add(mesh);
+    gizmoMeshes.push(mesh);
+  });
+  const centerSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.015, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false })
+  );
+  gizmoGroup.add(centerSphere);
+  scene.add(gizmoGroup);
+
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+
+  function setPointerFromEvent(evt) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((evt.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -(((evt.clientY - rect.top) / rect.height) * 2 - 1);
+  }
+
+  function updateHover(evt) {
+    if (state.dragState) return;
+    setPointerFromEvent(evt);
+    raycaster.setFromCamera(pointer, camera);
+    const gizmoHits = raycaster.intersectObjects(gizmoPickMeshes, false);
+    state.hoverAxisIndex = gizmoHits.length ? gizmoHits[0].object.userData.axisIndex : null;
+
+    state.hoverJointIndex = pickNearestJointFromEvent(evt, hoverJointIndices);
+    if (state.hoverJointIndex !== null) {
+      const axisName = state.hoverAxisIndex !== null ? ["twist", "spread", "bend"][state.hoverAxisIndex] : "";
+      renderTooltip(`${jointHitLabel(state.hoverJointIndex)}${axisName ? `\n${axisName}` : ""}`, evt);
+    } else if (state.hoverAxisIndex !== null) {
+      renderTooltip(`Selected joint\n${["twist", "spread", "bend"][state.hoverAxisIndex]}`, evt);
+    } else {
+      renderTooltip("", evt);
+    }
+    updateGizmo();
+  }
+
+  function updateDrag(evt) {
+    if (!state.dragState) return false;
+    setPointerFromEvent(evt);
+    raycaster.setFromCamera(pointer, camera);
+    const center = getJointCenter(state.selectedJoint);
+    if (!center) return false;
+    const axisVec = getAxisVector(state.dragState.axisIndex, state.selectedJoint);
+    if (!axisVec) return false;
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(axisVec, center);
+    const hit = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, hit)) return false;
+    const current = projectToPlane(hit.sub(center), axisVec);
+    if (current.lengthSq() === 0 || state.dragState.startVec.lengthSq() === 0) return false;
+    const delta = signedAngleOnAxis(state.dragState.startVec, current, axisVec);
+    state.eeAngles[state.selectedJoint][state.dragState.axisIndex] = state.dragState.startAngle + delta;
+    renderSelectedJointPanel();
+    scheduleCompose();
+    updateGizmo();
+    return true;
+  }
+
+  renderer.domElement.addEventListener("pointerdown", (evt) => {
+    setPointerFromEvent(evt);
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(gizmoPickMeshes, false);
+    const jointIndex = pickNearestJointFromEvent(evt, editableOutputIndices);
+    if (!hits.length && jointIndex !== null) {
+      selectJoint(jointIndex);
+      updateGizmo();
+      renderTooltip(jointHitLabel(jointIndex), evt);
+      evt.preventDefault();
+      return;
+    }
+    if (!hits.length) return;
+    const hit = hits[0];
+    const axisIndex = hit.object.userData.axisIndex;
+    const center = getJointCenter(state.selectedJoint);
+    const axisVec = getAxisVector(axisIndex, state.selectedJoint);
+    if (!center || !axisVec) return;
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(axisVec, center);
+    const startHit = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, startHit)) return;
+    const startVec = projectToPlane(startHit.sub(center), axisVec);
+    if (startVec.lengthSq() === 0) return;
+    state.dragState = {
+      axisIndex,
+      startAngle: state.eeAngles[state.selectedJoint][axisIndex],
+      startVec,
+    };
+    controls.enabled = false;
+    renderer.domElement.setPointerCapture(evt.pointerId);
+    evt.preventDefault();
+  });
+
+  renderer.domElement.addEventListener("pointermove", (evt) => {
+    if (!state.dragState) {
+      updateHover(evt);
+      return;
+    }
+    if (updateDrag(evt)) {
+      evt.preventDefault();
+    }
+  });
+
+  renderer.domElement.addEventListener("pointerup", (evt) => {
+    state.dragState = null;
+    controls.enabled = true;
+    try { renderer.domElement.releasePointerCapture(evt.pointerId); } catch (_) {}
+  });
+
+  renderer.domElement.addEventListener("pointerleave", () => {
+    state.dragState = null;
+    state.hoverJointIndex = null;
+    state.hoverAxisIndex = null;
+    controls.enabled = true;
+    renderTooltip("");
+    updateGizmo();
+  });
+
   function animate() {
     requestAnimationFrame(animate);
     renderer.render(scene, camera);
@@ -246,12 +728,92 @@ function initThree() {
     renderer.setSize(width, height);
   });
 
-  state.three = { scene, camera, renderer, controls, jointPoints, jointLines, mesh };
+  state.three = {
+    scene,
+    camera,
+    renderer,
+    controls,
+    jointPoints,
+    jointLines,
+    mesh,
+    gizmoGroup,
+    gizmoMeshes,
+    gizmoPickMeshes,
+    raycaster,
+    pointer,
+    selectedJointMarker,
+    hoverJointMarker,
+  };
 }
 
-makeSliders(poseRoot, poseCount, "p", state.pose, scheduleSolve);
-makeSliders(betaRoot, betaCount, "b", state.betas, scheduleSolve);
+function updateGizmo() {
+  if (!state.three) return;
+  const { gizmoGroup, gizmoMeshes, gizmoPickMeshes, selectedJointMarker, hoverJointMarker } = state.three;
+  const center = getJointCenter(state.selectedJoint);
+  if (!center) {
+    gizmoGroup.visible = false;
+    selectedJointMarker.visible = false;
+    hoverJointMarker.visible = false;
+    return;
+  }
+  gizmoGroup.visible = true;
+  gizmoGroup.position.copy(center);
+  selectedJointMarker.position.copy(center);
+  selectedJointMarker.visible = true;
+
+  const hoverCenter = state.hoverJointIndex !== null ? getJointCenter(state.hoverJointIndex) : null;
+  if (hoverCenter) {
+    hoverJointMarker.position.copy(hoverCenter);
+    hoverJointMarker.visible = true;
+  } else {
+    hoverJointMarker.visible = false;
+  }
+
+  const radius = 0.03;
+  gizmoMeshes.forEach((mesh) => {
+    const axisIndex = mesh.userData.axisIndex;
+    const axisVec = getAxisVector(axisIndex, state.selectedJoint);
+    const pickMesh = gizmoPickMeshes[axisIndex];
+    if (!axisVec) {
+      mesh.visible = false;
+      if (pickMesh) pickMesh.visible = false;
+      return;
+    }
+    mesh.visible = true;
+    mesh.scale.setScalar(radius);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axisVec);
+    mesh.material.opacity = state.dragState && state.dragState.axisIndex === axisIndex ? 1.0 : (state.hoverAxisIndex === axisIndex ? 0.95 : 0.75);
+    if (pickMesh) {
+      pickMesh.visible = true;
+      pickMesh.scale.setScalar(radius);
+      pickMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axisVec);
+    }
+  });
+}
+
+makeSliders(poseRoot, poseCount, "p", state.pose, scheduleSolve, "poseSliderInputs");
+makeSliders(betaRoot, betaCount, "b", state.betas, scheduleSolve, "betaSliderInputs");
+renderJointTree();
+renderSelectedJointPanel();
 initThree();
+
+document.getElementById("btnResetSelected").addEventListener("click", () => {
+  state.eeAngles[state.selectedJoint] = [0, 0, 0];
+  renderSelectedJointPanel();
+  scheduleCompose();
+});
+
+document.getElementById("btnResetEe").addEventListener("click", () => {
+  state.eeAngles = Array.from({ length: eeCount }, () => [0, 0, 0]);
+  renderSelectedJointPanel();
+  scheduleCompose();
+});
+
+document.getElementById("btnResetBetas").addEventListener("click", () => {
+  state.betas = Array(betaCount).fill(0);
+  syncSliders("betaSliderInputs", state.betas);
+  scheduleSolve();
+});
 
 document.getElementById("btnConnect").addEventListener("click", () => {
   state.backendUrl = document.getElementById("backendUrl").value.trim();

@@ -32,18 +32,39 @@
           <pre id="status">idle</pre>
         </div>
         <section>
-          <h2>Pose</h2>
-          <div id="poseSliders" class="sliders"></div>
+          <h2>Wrist</h2>
+          <div id="wristHost" class="wrist-host"></div>
         </section>
         <section>
+          <h2>Joint Tree</h2>
+          <div id="jointTree" class="joint-tree"></div>
+        </section>
+        <section>
+          <h2>Selected Joint</h2>
+          <div id="selectedJointInfo" class="selected-info"></div>
+          <div id="selectedJointSliders" class="sliders"></div>
+          <div class="row inline">
+            <button id="btnResetSelected">Reset Selected</button>
+            <button id="btnResetEe">Reset All Joints</button>
+          </div>
+        </section>
+        <details class="advanced-section">
+          <summary>Advanced Pose Sliders</summary>
+          <div id="poseSliders" class="sliders"></div>
+        </details>
+        <section>
           <h2>Betas</h2>
+          <div class="row inline">
+            <button id="btnResetBetas">Reset Shape</button>
+          </div>
           <div id="betaSliders" class="sliders"></div>
         </section>
       </aside>
       <main class="viewport">
         <div id="threeRoot"></div>
+        <div id="viewportTooltip" class="viewport-tooltip"></div>
       </main>
     </div>
-    <script src="./app.js?v=20260822-1" type="module"></script>
+    <script src="./app.js?v=20260822-5" type="module"></script>
   </body>
 </html>
