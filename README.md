@@ -67,6 +67,39 @@ To be able to import and use manotorch in another project, go to your `manotorch
 $ pip install .
 ```
 
+### Backend service (for Web editor)
+
+This repository now includes a lightweight backend scaffold under `backend/` that wraps `ManoLayer` and
+`AxisLayerFK` behind HTTP/WebSocket endpoints. It expects the official MANO assets to be mounted at
+`assets/mano/` by default, or provided via `MANO_ASSETS_ROOT`.
+
+Run it after installing the backend dependencies:
+
+```
+pip install --no-build-isolation -r backend/requirements.txt
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+```
+
+WebSocket stream protocol:
+
+- `hello`: initialize a session and receive the initial `result`
+- `solve`: update pose/betas/scene transform and receive a fresh `result`
+- `compose`: send anatomical Euler angles and receive the composed MANO `pose`
+- `ping`: receive `pong`
+
+### Web frontend and Docker
+
+The repository also includes a minimal static Web frontend under `frontend/` and a root `docker-compose.yml`
+that starts both the backend API and the browser UI. The frontend proxies `/api` and `/ws` to the backend, so
+you can leave the backend field blank in the UI. After mounting the official MANO assets into `assets/mano/`,
+run:
+
+```
+docker compose up --build
+```
+
+Then open `http://localhost:3000`.
+
 <br />
 <br />
 

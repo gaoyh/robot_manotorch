@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hand Editor</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="panel">
+        <h1>Hand Editor</h1>
+        <div class="row">
+          <label>Backend</label>
+          <input id="backendUrl" value="http://localhost:8008" placeholder="http://localhost:8008" />
+          <button id="btnConnect">Connect</button>
+        </div>
+        <div class="row">
+          <button id="btnLoad">Load</button>
+          <button id="btnSolve">Solve</button>
+          <button id="btnPing">Ping</button>
+        </div>
+        <div class="row">
+          <label>Side</label>
+          <select id="side">
+            <option value="right">right</option>
+            <option value="left">left</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Status</label>
+          <pre id="status">idle</pre>
+        </div>
+        <section>
+          <h2>Pose</h2>
+          <div id="poseSliders" class="sliders"></div>
+        </section>
+        <section>
+          <h2>Betas</h2>
+          <div id="betaSliders" class="sliders"></div>
+        </section>
+      </aside>
+      <main class="viewport">
+        <div id="threeRoot"></div>
+      </main>
+    </div>
+    <script src="./app.js?v=20260822-1" type="module"></script>
+  </body>
+</html>
