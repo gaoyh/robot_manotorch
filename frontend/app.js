@@ -1,11 +1,12 @@
-import * as THREE from "./vendor/three.module.js?v=20260822-5";
-import { OrbitControls } from "./vendor/OrbitControls.js?v=20260822-5";
+import * as THREE from "./vendor/three.module.js?v=20260822-7";
+import { OrbitControls } from "./vendor/OrbitControls.js?v=20260822-7";
 
 const poseCount = 48;
 const betaCount = 10;
 const eeCount = 16;
 const hoverJointCount = 21;
 const editableJointCount = 16;
+const hoverJointIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 const editableOutputIndices = [0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19];
 const articulationByOutput = {
   0: 0,
@@ -169,6 +170,10 @@ function selectedJointValues() {
   return state.eeAngles[artIndex] || [0, 0, 0];
 }
 
+function selectedArticulationIndex() {
+  return articulationByOutput[state.selectedJoint] ?? 0;
+}
+
 function renderSelectedJointPanel() {
   const joint = flattenTree().find((node) => node.index === state.selectedJoint)
     || { index: state.selectedJoint, label: jointLabel(state.selectedJoint) };
@@ -189,7 +194,7 @@ function renderSelectedJointPanel() {
     input.step = "0.01";
     input.value = values[axis] ?? 0;
     input.addEventListener("input", () => {
-      const artIndex = articulationByOutput[state.selectedJoint] ?? 0;
+      const artIndex = selectedArticulationIndex();
       state.eeAngles[artIndex][axis] = Number(input.value);
       label.querySelector(".val").textContent = Number(input.value).toFixed(2);
       scheduleCompose();
@@ -265,7 +270,8 @@ function getAxisVector(axisIndex, jointIndex) {
   const axes = state.latestAxes;
   if (!axes) return null;
   const axisName = ["back", "up", "left"][axisIndex];
-  const values = axes[axisName]?.[jointIndex];
+  const artIndex = articulationByOutput[jointIndex] ?? jointIndex;
+  const values = axes[axisName]?.[artIndex];
   if (!values) return null;
   const vec = new THREE.Vector3(values[0], values[1], values[2]);
   if (vec.lengthSq() === 0) return null;
@@ -649,7 +655,7 @@ function initThree() {
     const current = projectToPlane(hit.sub(center), axisVec);
     if (current.lengthSq() === 0 || state.dragState.startVec.lengthSq() === 0) return false;
     const delta = signedAngleOnAxis(state.dragState.startVec, current, axisVec);
-    state.eeAngles[state.selectedJoint][state.dragState.axisIndex] = state.dragState.startAngle + delta;
+    state.eeAngles[selectedArticulationIndex()][state.dragState.axisIndex] = state.dragState.startAngle + delta;
     renderSelectedJointPanel();
     scheduleCompose();
     updateGizmo();
@@ -681,7 +687,7 @@ function initThree() {
     if (startVec.lengthSq() === 0) return;
     state.dragState = {
       axisIndex,
-      startAngle: state.eeAngles[state.selectedJoint][axisIndex],
+      startAngle: state.eeAngles[selectedArticulationIndex()][axisIndex],
       startVec,
     };
     controls.enabled = false;
