@@ -27,6 +27,7 @@ class HandContext:
 @dataclass
 class HandSessionState:
     side: str = "right"
+    flat_hand_mean: bool = False
     pose: list[float] = None
     betas: list[float] = None
     scene_translation: Optional[list[float]] = None
@@ -90,8 +91,8 @@ class ManoBackendService:
     def __init__(self, assets_root: Optional[str] = None):
         self.assets_root = assets_root or default_assets_root()
 
-    @lru_cache(maxsize=2)
-    def _context(self, side: str) -> HandContext:
+    @lru_cache(maxsize=4)
+    def _context(self, side: str, flat_hand_mean: bool) -> HandContext:
         assets_root = Path(self.assets_root)
         mano_pkl = assets_root / "models" / f"MANO_{side.upper()}.pkl"
         if not mano_pkl.is_file():
@@ -107,24 +108,24 @@ class ManoBackendService:
                 side=side,
                 center_idx=None,
                 mano_assets_root=self.assets_root,
-                flat_hand_mean=False,
+                flat_hand_mean=flat_hand_mean,
             )
-            axis_fk = AxisLayerFK(side=side, mano_assets_root=self.assets_root)
+            axis_fk = AxisLayerFK(side=side, mano_assets_root=self.assets_root, flat_hand_mean=flat_hand_mean)
         except Exception as exc:  # pragma: no cover - wrapped for clearer operator errors
             raise ManoServiceError(f"Failed to initialize MANO service for side={side}: {exc}") from exc
 
         return HandContext(mano=mano, axis_fk=axis_fk, faces=mano.th_faces)
 
-    def is_ready(self, side: str = "right") -> bool:
+    def is_ready(self, side: str = "right", flat_hand_mean: bool = False) -> bool:
         try:
-            self._context(side)
+            self._context(side, flat_hand_mean)
             return True
         except Exception:
             return False
 
     @staticmethod
-    def default_state(side: str = "right") -> HandSessionState:
-        return HandSessionState(side=side)
+    def default_state(side: str = "right", flat_hand_mean: bool = False) -> HandSessionState:
+        return HandSessionState(side=side, flat_hand_mean=flat_hand_mean)
 
     def solve(
         self,
@@ -133,8 +134,9 @@ class ManoBackendService:
         betas: list[float],
         scene_translation: Optional[list[float]] = None,
         scene_scale: float = 1.0,
+        flat_hand_mean: bool = False,
     ) -> dict:
-        context = self._context(side)
+        context = self._context(side, flat_hand_mean)
         pose_tensor = _as_row_tensor(pose, 48, "pose")
         betas_tensor = _as_row_tensor(betas, 10, "betas")
 
@@ -158,6 +160,7 @@ class ManoBackendService:
     def solve_state(self, state: HandSessionState) -> dict:
         return self.solve(
             side=state.side,
+            flat_hand_mean=state.flat_hand_mean,
             pose=state.pose,
             betas=state.betas,
             scene_translation=state.scene_translation,
@@ -172,17 +175,19 @@ class ManoBackendService:
         scene_translation: Optional[list[float]] = None,
         scene_scale: Optional[float] = None,
         side: Optional[str] = None,
+        flat_hand_mean: Optional[bool] = None,
     ) -> HandSessionState:
         return HandSessionState(
             side=side or state.side,
+            flat_hand_mean=flat_hand_mean if flat_hand_mean is not None else state.flat_hand_mean,
             pose=pose if pose is not None else state.pose,
             betas=betas if betas is not None else state.betas,
             scene_translation=scene_translation if scene_translation is not None else state.scene_translation,
             scene_scale=scene_scale if scene_scale is not None else state.scene_scale,
         )
 
-    def compose(self, side: str, ee_angles: list[float]) -> list[float]:
-        context = self._context(side)
+    def compose(self, side: str, ee_angles: list[float], flat_hand_mean: bool = False) -> list[float]:
+        context = self._context(side, flat_hand_mean)
         angles = _as_row_tensor(ee_angles, 48, "ee_angles").view(1, 16, 3)
         pose = context.axis_fk.compose(angles)
         return _to_list(pose.reshape(1, -1)[0])

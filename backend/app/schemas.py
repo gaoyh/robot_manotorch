@@ -9,6 +9,7 @@ def _zeros(length: int) -> list[float]:
 
 class HandSolveRequest(BaseModel):
     side: Literal["left", "right"] = "right"
+    flat_hand_mean: bool = False
     pose: list[float]
     betas: list[float] = Field(default_factory=lambda: _zeros(10))
     scene_translation: list[float] = Field(default_factory=lambda: _zeros(3))
@@ -17,6 +18,7 @@ class HandSolveRequest(BaseModel):
 
 class HandComposeRequest(BaseModel):
     side: Literal["left", "right"] = "right"
+    flat_hand_mean: bool = False
     ee_angles: list[float]
 
 
@@ -26,6 +28,7 @@ class HandLoadRequest(HandSolveRequest):
 
 class ModelMeta(BaseModel):
     side: Literal["left", "right"]
+    flat_hand_mean: bool
     pose_dim: int
     betas_dim: int
     assets_root: str
@@ -50,6 +53,7 @@ class HandComposeResponse(BaseModel):
 class StreamInitMessage(BaseModel):
     type: Literal["hello"] = "hello"
     side: Literal["left", "right"] = "right"
+    flat_hand_mean: bool = False
     pose: list[float] = Field(default_factory=lambda: _zeros(48))
     betas: list[float] = Field(default_factory=lambda: _zeros(10))
     scene_translation: list[float] = Field(default_factory=lambda: _zeros(3))
@@ -58,6 +62,7 @@ class StreamInitMessage(BaseModel):
 
 class StreamSolveMessage(BaseModel):
     type: Literal["solve"] = "solve"
+    flat_hand_mean: Optional[bool] = None
     pose: Optional[list[float]] = None
     betas: Optional[list[float]] = None
     scene_translation: Optional[list[float]] = None
@@ -66,6 +71,7 @@ class StreamSolveMessage(BaseModel):
 
 class StreamComposeMessage(BaseModel):
     type: Literal["compose"] = "compose"
+    flat_hand_mean: Optional[bool] = None
     ee_angles: list[float]
 
 

@@ -127,6 +127,12 @@ For more dataset-backed examples, use:
 - **HaGRIDv2**: large gesture-class image set with explicit classes like `fist`, `peace`, `thumb_index`, `palm`, `no_gesture`
 - **InterHand2.6M**: natural interacting hand poses with MANO annotations
 
+The UI also includes a **Basis** switch:
+- **Default Basis** uses `flat_hand_mean=False`
+- **Flat Basis** uses `flat_hand_mean=True`
+
+Switching the basis reinitializes the backend solve/compose basis, so presets should be reselected after toggling if you want to compare the two modes directly.
+
 <br />
 <br />
 

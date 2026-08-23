@@ -44,8 +44,14 @@ def create_app() -> FastAPI:
     service = ManoBackendService()
 
     @app.get("/healthz")
-    def healthz(side: str = "right"):
-        return {"ok": True, "ready": service.is_ready(side), "side": side, "assets_root": service.assets_root}
+    def healthz(side: str = "right", flat_hand_mean: bool = False):
+        return {
+            "ok": True,
+            "ready": service.is_ready(side, flat_hand_mean),
+            "side": side,
+            "flat_hand_mean": flat_hand_mean,
+            "assets_root": service.assets_root,
+        }
 
     @app.post("/api/load", response_model=HandSolveResponse)
     def load(req: HandLoadRequest):
@@ -58,7 +64,7 @@ def create_app() -> FastAPI:
     @app.post("/api/compose", response_model=HandComposeResponse)
     def compose(req: HandComposeRequest):
         try:
-            pose = service.compose(req.side, req.ee_angles)
+            pose = service.compose(req.side, req.ee_angles, req.flat_hand_mean)
         except ManoServiceError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         return HandComposeResponse(side=req.side, pose=pose)
@@ -71,10 +77,11 @@ def create_app() -> FastAPI:
             StreamReadyResponse(
                 meta=ModelMeta(
                     side=state.side,
+                    flat_hand_mean=state.flat_hand_mean,
                     pose_dim=48,
                     betas_dim=10,
                     assets_root=service.assets_root,
-                    ready=service.is_ready(state.side),
+                    ready=service.is_ready(state.side, state.flat_hand_mean),
                 )
             ).model_dump()
         )
@@ -92,6 +99,7 @@ def create_app() -> FastAPI:
                     state = service.update_state(
                         state,
                         side=payload.get("side", state.side),
+                        flat_hand_mean=payload.get("flat_hand_mean"),
                         pose=payload.get("pose"),
                         betas=payload.get("betas"),
                         scene_translation=payload.get("scene_translation"),
@@ -102,10 +110,11 @@ def create_app() -> FastAPI:
                         StreamResultResponse(
                             meta=ModelMeta(
                                 side=state.side,
+                                flat_hand_mean=state.flat_hand_mean,
                                 pose_dim=48,
                                 betas_dim=10,
                                 assets_root=service.assets_root,
-                                ready=True,
+                                ready=service.is_ready(state.side, state.flat_hand_mean),
                             ),
                             **result,
                         ).model_dump()
@@ -116,6 +125,7 @@ def create_app() -> FastAPI:
                     state = service.update_state(
                         state,
                         side=payload.get("side"),
+                        flat_hand_mean=payload.get("flat_hand_mean"),
                         pose=payload.get("pose"),
                         betas=payload.get("betas"),
                         scene_translation=payload.get("scene_translation"),
@@ -126,10 +136,11 @@ def create_app() -> FastAPI:
                         StreamResultResponse(
                             meta=ModelMeta(
                                 side=state.side,
+                                flat_hand_mean=state.flat_hand_mean,
                                 pose_dim=48,
                                 betas_dim=10,
                                 assets_root=service.assets_root,
-                                ready=True,
+                                ready=service.is_ready(state.side, state.flat_hand_mean),
                             ),
                             **result,
                         ).model_dump()
@@ -137,8 +148,8 @@ def create_app() -> FastAPI:
                     continue
 
                 if msg_type == "compose":
-                    pose = service.compose(state.side, payload["ee_angles"])
-                    state = service.update_state(state, pose=pose)
+                    pose = service.compose(state.side, payload["ee_angles"], payload.get("flat_hand_mean", state.flat_hand_mean))
+                    state = service.update_state(state, flat_hand_mean=payload.get("flat_hand_mean"), pose=pose)
                     await ws.send_json(StreamPoseResponse(side=state.side, pose=pose).model_dump())
                     continue
 
@@ -168,6 +179,7 @@ def _solve_response(service: ManoBackendService, req: HandSolveRequest) -> HandS
     try:
         result = service.solve(
             side=req.side,
+            flat_hand_mean=req.flat_hand_mean,
             pose=req.pose,
             betas=req.betas,
             scene_translation=req.scene_translation,
@@ -179,10 +191,11 @@ def _solve_response(service: ManoBackendService, req: HandSolveRequest) -> HandS
     return HandSolveResponse(
         meta=ModelMeta(
             side=req.side,
+            flat_hand_mean=req.flat_hand_mean,
             pose_dim=48,
             betas_dim=10,
             assets_root=service.assets_root,
-            ready=True,
+            ready=service.is_ready(req.side, req.flat_hand_mean),
         ),
         verts=result["verts"],
         joints=result["joints"],

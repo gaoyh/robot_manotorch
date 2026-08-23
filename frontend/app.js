@@ -104,6 +104,7 @@ const JOINT_NAMES = [
 const state = {
   backendUrl: document.getElementById("backendUrl").value.trim(),
   side: document.getElementById("side").value,
+  flatHandMean: document.getElementById("basis").value === "flat",
   pose: Array(poseCount).fill(0),
   betas: Array(betaCount).fill(0),
   eeAngles: Array.from({ length: eeCount }, () => [0, 0, 0]),
@@ -131,6 +132,7 @@ const selectedJointInfo = document.getElementById("selectedJointInfo");
 const selectedJointSliders = document.getElementById("selectedJointSliders");
 const presetHost = document.getElementById("presetHost");
 const presetSource = document.getElementById("presetSource");
+const basisSelect = document.getElementById("basis");
 const viewportTooltip = document.getElementById("viewportTooltip");
 const wristHost = document.getElementById("wristHost");
 
@@ -473,9 +475,16 @@ function applyEeAngles(angles) {
   scheduleCompose();
 }
 
+function syncBasisSource() {
+  if (!presetSource) return;
+  presetSource.textContent = state.flatHandMean
+    ? "Basis: Flat Basis (MANO flat_hand_mean=True)"
+    : "Basis: Default Basis (MANO flat_hand_mean=False)";
+}
+
 function markCustomPose() {
   if (presetSource) {
-    presetSource.textContent = "Custom pose";
+    presetSource.textContent = `${state.flatHandMean ? "Basis: Flat Basis (MANO flat_hand_mean=True)" : "Basis: Default Basis (MANO flat_hand_mean=False)"}\nCustom pose`;
   }
 }
 
@@ -489,14 +498,12 @@ function renderPresetButtons() {
     button.innerHTML = `${preset.label}<br /><small>${preset.detail}</small>`;
     button.addEventListener("click", () => {
       applyEeAngles(preset.apply());
-      presetSource.textContent = `${preset.label}: ${preset.source}`;
+      presetSource.textContent = `${state.flatHandMean ? "Basis: Flat Basis (MANO flat_hand_mean=True)" : "Basis: Default Basis (MANO flat_hand_mean=False)"}\n${preset.label}: ${preset.source}`;
     });
     presetHost.appendChild(button);
   });
   updatePresetActiveState();
-  if (presetSource) {
-    presetSource.textContent = "参考来源：FreiHAND / HaMeR / HaGRID / InterHand2.6M 的公开样本与标注";
-  }
+  syncBasisSource();
 }
 
 function updatePresetActiveState() {
@@ -671,6 +678,7 @@ function buildWebSocket() {
     state.ws.send(JSON.stringify({
       type: "hello",
       side: state.side,
+      flat_hand_mean: state.flatHandMean,
       pose: state.pose,
       betas: state.betas,
     }));
@@ -691,6 +699,7 @@ function buildWebSocket() {
       sendStream({
         type: "solve",
         side: state.side,
+        flat_hand_mean: state.flatHandMean,
         pose: state.pose,
         betas: state.betas,
       });
@@ -727,6 +736,7 @@ function scheduleSolve() {
       pose: state.pose,
       betas: state.betas,
       side: state.side,
+      flat_hand_mean: state.flatHandMean,
     });
   });
 }
@@ -748,6 +758,7 @@ async function composeOnce() {
   sendStream({
     type: "compose",
     side: state.side,
+    flat_hand_mean: state.flatHandMean,
     ee_angles: payloadAngles,
   });
 }
@@ -756,6 +767,7 @@ async function loadOnce() {
   sendStream({
     type: "hello",
     side: state.side,
+    flat_hand_mean: state.flatHandMean,
     pose: state.pose,
     betas: state.betas,
   });
@@ -765,6 +777,7 @@ async function solveOnce() {
   sendStream({
     type: "solve",
     side: state.side,
+    flat_hand_mean: state.flatHandMean,
     pose: state.pose,
     betas: state.betas,
   });
@@ -1121,6 +1134,7 @@ makeSliders(betaRoot, betaCount, "b", state.betas, scheduleSolve, "betaSliderInp
 renderJointTree();
 renderSelectedJointPanel();
 renderPresetButtons();
+syncBasisSource();
 initThree();
 
 document.getElementById("btnResetSelected").addEventListener("click", () => {
@@ -1169,4 +1183,12 @@ document.getElementById("btnPing").addEventListener("click", () => {
 
 document.getElementById("side").addEventListener("change", (evt) => {
   state.side = evt.target.value;
+});
+
+basisSelect.addEventListener("change", (evt) => {
+  state.flatHandMean = evt.target.value === "flat";
+  syncBasisSource();
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    buildWebSocket();
+  }
 });
