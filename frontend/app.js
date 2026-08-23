@@ -5,48 +5,70 @@ const poseCount = 48;
 const betaCount = 10;
 const eeCount = 16;
 const hoverJointCount = 21;
-const editableJointCount = 16;
 const hoverJointIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-const editableOutputIndices = [0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19];
-const articulationByOutput = {
+const outputToArticulation = {
   0: 0,
   1: 1,
   2: 2,
   3: 3,
+  4: 3,
   5: 4,
   6: 5,
   7: 6,
+  8: 6,
   9: 7,
   10: 8,
   11: 9,
+  12: 9,
   13: 10,
   14: 11,
   15: 12,
+  16: 12,
   17: 13,
   18: 14,
   19: 15,
+  20: 15,
 };
+const articulationToOutput = [0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19];
+const ARTICULATION_LABELS = [
+  "Wrist",
+  "Thumb / base",
+  "Thumb / middle",
+  "Thumb / tip",
+  "Index / base",
+  "Index / middle",
+  "Index / tip",
+  "Middle / base",
+  "Middle / middle",
+  "Middle / tip",
+  "Ring / base",
+  "Ring / middle",
+  "Ring / tip",
+  "Pinky / base",
+  "Pinky / middle",
+  "Pinky / tip",
+];
 
 const JOINT_TREE = [
   { index: 1, label: "Thumb / base", children: [
     { index: 2, label: "Thumb / middle", children: [] },
     { index: 3, label: "Thumb / tip", children: [] },
   ]},
-  { index: 5, label: "Index / base", children: [
-    { index: 6, label: "Index / middle", children: [] },
-    { index: 7, label: "Index / tip", children: [] },
+  { index: 4, label: "Index / base", children: [
+    { index: 5, label: "Index / middle", children: [] },
+    { index: 6, label: "Index / tip", children: [] },
   ]},
-  { index: 9, label: "Middle / base", children: [
-    { index: 10, label: "Middle / middle", children: [] },
-    { index: 11, label: "Middle / tip", children: [] },
+  { index: 7, label: "Middle / base", children: [
+    { index: 8, label: "Middle / middle", children: [] },
+    { index: 9, label: "Middle / tip", children: [] },
   ]},
-  { index: 13, label: "Ring / base", children: [
-    { index: 14, label: "Ring / middle", children: [] },
-    { index: 15, label: "Ring / tip", children: [] },
+  { index: 10, label: "Ring / base", children: [
+    { index: 11, label: "Ring / middle", children: [] },
+    { index: 12, label: "Ring / tip", children: [] },
   ]},
-  { index: 17, label: "Pinky / base", children: [
-    { index: 18, label: "Pinky / middle", children: [] },
-    { index: 19, label: "Pinky / tip", children: [] },
+  { index: 13, label: "Pinky / base", children: [
+    { index: 14, label: "Pinky / middle", children: [] },
+    { index: 15, label: "Pinky / tip", children: [] },
   ]},
 ];
 
@@ -93,6 +115,7 @@ const state = {
   dragState: null,
   hoverJointIndex: null,
   hoverAxisIndex: null,
+  lastSolvedEeAngles: null,
 };
 
 const statusEl = document.getElementById("status");
@@ -167,12 +190,7 @@ function setEeAnglesFromFlat(flat) {
 }
 
 function selectedJointValues() {
-  const artIndex = articulationByOutput[state.selectedJoint] ?? 0;
-  return state.eeAngles[artIndex] || [0, 0, 0];
-}
-
-function selectedArticulationIndex() {
-  return articulationByOutput[state.selectedJoint] ?? 0;
+  return state.eeAngles[state.selectedJoint] || [0, 0, 0];
 }
 
 function renderSelectedJointPanel() {
@@ -190,13 +208,12 @@ function renderSelectedJointPanel() {
     label.innerHTML = `<span>${name}</span><span class="val">${Number(values[axis] ?? 0).toFixed(2)}</span>`;
     const input = document.createElement("input");
     input.type = "range";
-    input.min = "-3.14";
-    input.max = "3.14";
+    input.min = "-1.5";
+    input.max = "1.5";
     input.step = "0.01";
     input.value = values[axis] ?? 0;
     input.addEventListener("input", () => {
-      const artIndex = selectedArticulationIndex();
-      state.eeAngles[artIndex][axis] = Number(input.value);
+      state.eeAngles[state.selectedJoint][axis] = Number(input.value);
       label.querySelector(".val").textContent = Number(input.value).toFixed(2);
       scheduleCompose();
     });
@@ -264,15 +281,14 @@ function renderJointTree() {
 }
 
 function jointLabel(index) {
-  return JOINT_NAMES[index] || `Joint ${index}`;
+  return ARTICULATION_LABELS[index] || `Joint ${index}`;
 }
 
 function getAxisVector(axisIndex, jointIndex) {
   const axes = state.latestAxes;
   if (!axes) return null;
   const axisName = ["back", "up", "left"][axisIndex];
-  const artIndex = articulationByOutput[jointIndex] ?? jointIndex;
-  const values = axes[axisName]?.[artIndex];
+  const values = axes[axisName]?.[jointIndex];
   if (!values) return null;
   const vec = new THREE.Vector3(values[0], values[1], values[2]);
   if (vec.lengthSq() === 0) return null;
@@ -280,7 +296,8 @@ function getAxisVector(axisIndex, jointIndex) {
 }
 
 function getJointCenter(jointIndex) {
-  const joint = state.latestJoints[jointIndex];
+  const outputIndex = articulationToOutput[jointIndex] ?? jointIndex;
+  const joint = state.latestJoints[outputIndex];
   if (!joint) return null;
   return new THREE.Vector3(joint[0], joint[1], joint[2]);
 }
@@ -327,6 +344,10 @@ function pickNearestJointFromEvent(evt, indices = hoverJointIndices, thresholdPx
     }
   });
   return bestDist <= thresholdPx ? best : null;
+}
+
+function outputToSelectedArticulation(outputIndex) {
+  return outputToArticulation[outputIndex];
 }
 
 function backendBase() {
@@ -383,8 +404,7 @@ function buildWebSocket() {
     }
     if (msg.type === "result") {
       if (msg.ee_angles) {
-        setEeAnglesFromFlat(msg.ee_angles.flat ? msg.ee_angles.flat() : msg.ee_angles);
-        renderSelectedJointPanel();
+        state.lastSolvedEeAngles = msg.ee_angles.flat ? msg.ee_angles.flat() : msg.ee_angles;
       }
       updateScene(msg);
     }
@@ -628,10 +648,11 @@ function initThree() {
     const gizmoHits = raycaster.intersectObjects(gizmoPickMeshes, false);
     state.hoverAxisIndex = gizmoHits.length ? gizmoHits[0].object.userData.axisIndex : null;
 
-    state.hoverJointIndex = pickNearestJointFromEvent(evt, hoverJointIndices);
-    if (state.hoverJointIndex !== null) {
+    const hoverOutputIndex = pickNearestJointFromEvent(evt, hoverJointIndices);
+    state.hoverJointIndex = hoverOutputIndex === null ? null : outputToSelectedArticulation(hoverOutputIndex);
+    if (hoverOutputIndex !== null) {
       const axisName = state.hoverAxisIndex !== null ? ["twist", "spread", "bend"][state.hoverAxisIndex] : "";
-      renderTooltip(`${jointHitLabel(state.hoverJointIndex)}${axisName ? `\n${axisName}` : ""}`, evt);
+      renderTooltip(`${JOINT_NAMES[hoverOutputIndex] || `Joint ${hoverOutputIndex}`}${axisName ? `\n${axisName}` : ""}`, evt);
     } else if (state.hoverAxisIndex !== null) {
       renderTooltip(`Selected joint\n${["twist", "spread", "bend"][state.hoverAxisIndex]}`, evt);
     } else {
@@ -654,7 +675,7 @@ function initThree() {
     const current = projectToPlane(hit.sub(center), axisVec);
     if (current.lengthSq() === 0 || state.dragState.startVec.lengthSq() === 0) return false;
     const delta = signedAngleOnAxis(state.dragState.startVec, current, axisVec);
-    state.eeAngles[selectedArticulationIndex()][state.dragState.axisIndex] = state.dragState.startAngle + delta;
+    state.eeAngles[state.selectedJoint][state.dragState.axisIndex] = state.dragState.startAngle + delta;
     renderSelectedJointPanel();
     scheduleCompose();
     updateGizmo();
@@ -665,11 +686,12 @@ function initThree() {
     setPointerFromEvent(evt);
     raycaster.setFromCamera(pointer, camera);
     const hits = raycaster.intersectObjects(gizmoPickMeshes, false);
-    const jointIndex = pickNearestJointFromEvent(evt, editableOutputIndices);
+    const outputIndex = pickNearestJointFromEvent(evt, hoverJointIndices);
+    const jointIndex = outputIndex === null ? null : outputToSelectedArticulation(outputIndex);
     if (!hits.length && jointIndex !== null) {
       selectJoint(jointIndex);
       updateGizmo();
-      renderTooltip(jointHitLabel(jointIndex), evt);
+      renderTooltip(JOINT_NAMES[outputIndex] || `Joint ${outputIndex}`, evt);
       evt.preventDefault();
       return;
     }
@@ -686,7 +708,7 @@ function initThree() {
     if (startVec.lengthSq() === 0) return;
     state.dragState = {
       axisIndex,
-      startAngle: state.eeAngles[selectedArticulationIndex()][axisIndex],
+      startAngle: state.eeAngles[state.selectedJoint][axisIndex],
       startVec,
     };
     controls.enabled = false;
