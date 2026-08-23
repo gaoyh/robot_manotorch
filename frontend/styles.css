@@ -92,6 +92,29 @@ button {
   color: #cbd5e1;
 }
 
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.preset-grid button {
+  min-height: 42px;
+  font-size: 12px;
+}
+
+.preset-grid button.active {
+  background: #0f766e;
+  border-color: #2dd4bf;
+}
+
+.preset-source {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
 .joint-tree {
   display: grid;
   gap: 6px;

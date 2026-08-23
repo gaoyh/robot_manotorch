@@ -100,6 +100,33 @@ docker compose up --build
 
 Then open `http://localhost:3000`.
 
+### Gesture presets and sample sources
+
+The frontend includes starter presets for common hand shapes. They are heuristic MANO/AxisLayerFK presets, but the
+reference samples come from public gesture/hand-pose resources:
+
+| Preset | Recommended source | Notes |
+| --- | --- | --- |
+| Open Hand | FreiHAND, HaMeR, HaGRID `palm` / `no_gesture` | Best for a neutral starting pose |
+| Relaxed | FreiHAND, HaMeR | Slightly bent resting hand |
+| Fist | HaGRID `fist` / `grabbing` / `grip` | Good for a closed hand baseline |
+| Victory | HaGRID `peace` / `two_up` / `xsign` | Index + middle extended |
+| Thumbs Up | HaGRID `like` / `thumb_index` / `call` | Thumb up, other fingers folded |
+| Point | HaGRID `point` / `one` | Index pointing |
+| Palm | HaGRID `palm` / `no_gesture` | Open palm, all fingers spread |
+| OK | HaGRID `ok` | Thumb-index circle |
+| Rock | HaGRID `rock` / `xsign` | Index + pinky extended |
+| Three | HaGRID `three` / `three2` / `three3` | Three-finger pose |
+| Four | HaGRID `four` | Four-finger pose |
+| Shaka | HaGRID `call` / `mute` | Thumb + pinky extended |
+
+For more dataset-backed examples, use:
+
+- **FreiHAND**: MANO-compatible pose/shape annotations and rendered examples
+- **HaMeR**: predicts MANO parameters from images, useful for realistic sample priors
+- **HaGRIDv2**: large gesture-class image set with explicit classes like `fist`, `peace`, `thumb_index`, `palm`, `no_gesture`
+- **InterHand2.6M**: natural interacting hand poses with MANO annotations
+
 <br />
 <br />
 

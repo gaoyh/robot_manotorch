@@ -129,8 +129,243 @@ const betaRoot = document.getElementById("betaSliders");
 const jointTreeRoot = document.getElementById("jointTree");
 const selectedJointInfo = document.getElementById("selectedJointInfo");
 const selectedJointSliders = document.getElementById("selectedJointSliders");
+const presetHost = document.getElementById("presetHost");
+const presetSource = document.getElementById("presetSource");
 const viewportTooltip = document.getElementById("viewportTooltip");
 const wristHost = document.getElementById("wristHost");
+
+const FINGER_GROUPS = {
+  thumb: [1, 2, 3],
+  index: [4, 5, 6],
+  middle: [7, 8, 9],
+  ring: [10, 11, 12],
+  pinky: [13, 14, 15],
+};
+
+function makeEeAngles(fill = 0) {
+  return Array.from({ length: eeCount }, () => [fill, fill, fill]);
+}
+
+function cloneEeAngles(angles) {
+  return angles.map((triple) => triple.slice());
+}
+
+function setFingerBend(target, finger, bend, spread = 0, twist = 0) {
+  FINGER_GROUPS[finger].forEach((idx, offset) => {
+    target[idx] = [
+      twist,
+      spread,
+      Math.max(0, bend - offset * 0.1),
+    ];
+  });
+}
+
+const GESTURE_PRESETS = [
+  {
+    id: "open",
+    label: "Open Hand",
+    source: "FreiHAND / HaMeR / HaGRID palm, no_gesture",
+    detail: "适合初始展示、待机、无动作状态",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, 0.18, 0.04];
+      angles[2] = [0.00, 0.08, 0.03];
+      angles[3] = [0.00, 0.02, 0.02];
+      setFingerBend(angles, "index", 0.05, 0.02, 0.00);
+      setFingerBend(angles, "middle", 0.05, 0.00, 0.00);
+      setFingerBend(angles, "ring", 0.05, -0.01, 0.00);
+      setFingerBend(angles, "pinky", 0.05, -0.02, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "relaxed",
+    label: "Relaxed",
+    source: "FreiHAND / HaMeR natural resting hands",
+    detail: "比伸直更自然，适合默认编辑起点",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, 0.15, 0.10];
+      angles[2] = [0.00, 0.06, 0.08];
+      angles[3] = [0.00, 0.02, 0.05];
+      setFingerBend(angles, "index", 0.22, 0.02, 0.00);
+      setFingerBend(angles, "middle", 0.22, 0.00, 0.00);
+      setFingerBend(angles, "ring", 0.25, -0.01, 0.00);
+      setFingerBend(angles, "pinky", 0.26, -0.02, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "fist",
+    label: "Fist",
+    source: "HaGRID fist / grabbing / grip",
+    detail: "四指强弯曲，拇指收拢",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, -0.24, 0.60];
+      angles[2] = [0.00, -0.30, 0.75];
+      angles[3] = [0.00, -0.26, 0.92];
+      setFingerBend(angles, "index", 1.10, -0.08, 0.00);
+      setFingerBend(angles, "middle", 1.18, -0.05, 0.00);
+      setFingerBend(angles, "ring", 1.22, -0.04, 0.00);
+      setFingerBend(angles, "pinky", 1.26, -0.03, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "victory",
+    label: "Victory",
+    source: "HaGRID peace / two_up / xsign",
+    detail: "食指、中指伸直，环指、小指弯曲",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, 0.05, 0.22];
+      angles[2] = [0.00, 0.02, 0.12];
+      angles[3] = [0.00, 0.01, 0.08];
+      setFingerBend(angles, "index", 0.05, 0.04, 0.00);
+      setFingerBend(angles, "middle", 0.05, 0.02, 0.00);
+      setFingerBend(angles, "ring", 0.96, -0.04, 0.00);
+      setFingerBend(angles, "pinky", 1.00, -0.05, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "thumbs-up",
+    label: "Thumbs Up",
+    source: "HaGRID like / thumb_index / call",
+    detail: "拇指抬起，其他手指收起",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, -0.42, 0.35];
+      angles[2] = [0.00, -0.18, 0.28];
+      angles[3] = [0.00, 0.05, 0.16];
+      setFingerBend(angles, "index", 0.82, -0.04, 0.00);
+      setFingerBend(angles, "middle", 0.72, -0.03, 0.00);
+      setFingerBend(angles, "ring", 0.62, -0.03, 0.00);
+      setFingerBend(angles, "pinky", 0.58, -0.02, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "point",
+    label: "Point",
+    source: "HaGRID point / one",
+    detail: "食指指向，其余手指收起",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, 0.06, 0.18];
+      angles[2] = [0.00, 0.03, 0.10];
+      angles[3] = [0.00, 0.00, 0.06];
+      setFingerBend(angles, "index", 0.02, 0.04, 0.00);
+      setFingerBend(angles, "middle", 0.82, -0.05, 0.00);
+      setFingerBend(angles, "ring", 0.86, -0.05, 0.00);
+      setFingerBend(angles, "pinky", 0.80, -0.04, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "palm",
+    label: "Palm",
+    source: "HaGRID palm / no_gesture",
+    detail: "张开手掌，五指舒展",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, 0.24, 0.02];
+      angles[2] = [0.00, 0.14, 0.02];
+      angles[3] = [0.00, 0.08, 0.02];
+      setFingerBend(angles, "index", 0.00, 0.08, 0.00);
+      setFingerBend(angles, "middle", 0.00, 0.02, 0.00);
+      setFingerBend(angles, "ring", 0.02, -0.02, 0.00);
+      setFingerBend(angles, "pinky", 0.03, -0.05, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "ok",
+    label: "OK",
+    source: "HaGRID ok",
+    detail: "拇指和食指成环，其余手指伸直",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, -0.18, 0.60];
+      angles[2] = [0.00, -0.26, 0.85];
+      angles[3] = [0.00, -0.10, 0.10];
+      setFingerBend(angles, "index", 0.55, 0.00, 0.00);
+      setFingerBend(angles, "middle", 0.08, 0.02, 0.00);
+      setFingerBend(angles, "ring", 0.10, -0.01, 0.00);
+      setFingerBend(angles, "pinky", 0.12, -0.03, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "rock",
+    label: "Rock",
+    source: "HaGRID rock / xsign",
+    detail: "食指和小指伸出，中间两指收起",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, 0.04, 0.18];
+      angles[2] = [0.00, 0.02, 0.10];
+      angles[3] = [0.00, 0.02, 0.08];
+      setFingerBend(angles, "index", 0.05, 0.05, 0.00);
+      setFingerBend(angles, "middle", 0.98, -0.05, 0.00);
+      setFingerBend(angles, "ring", 0.96, -0.05, 0.00);
+      setFingerBend(angles, "pinky", 0.08, -0.02, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "three",
+    label: "Three",
+    source: "HaGRID three / three2 / three3",
+    detail: "三指伸出，拇指和小指收起",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, 0.10, 0.26];
+      angles[2] = [0.00, 0.05, 0.14];
+      angles[3] = [0.00, 0.02, 0.08];
+      setFingerBend(angles, "index", 0.03, 0.04, 0.00);
+      setFingerBend(angles, "middle", 0.03, 0.02, 0.00);
+      setFingerBend(angles, "ring", 0.05, 0.00, 0.00);
+      setFingerBend(angles, "pinky", 0.86, -0.05, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "four",
+    label: "Four",
+    source: "HaGRID four",
+    detail: "四指伸出，拇指收起",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, 0.12, 0.30];
+      angles[2] = [0.00, 0.06, 0.16];
+      angles[3] = [0.00, 0.03, 0.10];
+      setFingerBend(angles, "index", 0.03, 0.05, 0.00);
+      setFingerBend(angles, "middle", 0.03, 0.03, 0.00);
+      setFingerBend(angles, "ring", 0.03, 0.01, 0.00);
+      setFingerBend(angles, "pinky", 0.03, -0.01, 0.00);
+      return angles;
+    },
+  },
+  {
+    id: "shaka",
+    label: "Shaka",
+    source: "HaGRID call / mute / thumbs-up variants",
+    detail: "拇指和小指伸出，其余手指收起",
+    apply() {
+      const angles = makeEeAngles(0);
+      angles[1] = [0.00, -0.12, 0.50];
+      angles[2] = [0.00, -0.06, 0.32];
+      angles[3] = [0.00, -0.02, 0.18];
+      setFingerBend(angles, "index", 0.82, -0.04, 0.00);
+      setFingerBend(angles, "middle", 0.74, -0.03, 0.00);
+      setFingerBend(angles, "ring", 0.66, -0.03, 0.00);
+      setFingerBend(angles, "pinky", 0.08, -0.05, 0.00);
+      return angles;
+    },
+  },
+];
 
 function setStatus(value) {
   statusEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -221,12 +456,64 @@ function renderSelectedJointPanel() {
     input.addEventListener("input", () => {
       state.eeAngles[state.selectedJoint][axis] = Number(input.value);
       label.querySelector(".val").textContent = Number(input.value).toFixed(2);
+      updatePresetActiveState();
+      markCustomPose();
       scheduleCompose();
     });
     wrap.appendChild(label);
     wrap.appendChild(input);
     selectedJointSliders.appendChild(wrap);
   });
+}
+
+function applyEeAngles(angles) {
+  state.eeAngles = cloneEeAngles(angles);
+  renderSelectedJointPanel();
+  updatePresetActiveState();
+  scheduleCompose();
+}
+
+function markCustomPose() {
+  if (presetSource) {
+    presetSource.textContent = "Custom pose";
+  }
+}
+
+function renderPresetButtons() {
+  if (!presetHost) return;
+  presetHost.innerHTML = "";
+  GESTURE_PRESETS.forEach((preset) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.presetId = preset.id;
+    button.innerHTML = `${preset.label}<br /><small>${preset.detail}</small>`;
+    button.addEventListener("click", () => {
+      applyEeAngles(preset.apply());
+      presetSource.textContent = `${preset.label}: ${preset.source}`;
+    });
+    presetHost.appendChild(button);
+  });
+  updatePresetActiveState();
+  if (presetSource) {
+    presetSource.textContent = "参考来源：FreiHAND / HaMeR / HaGRID / InterHand2.6M 的公开样本与标注";
+  }
+}
+
+function updatePresetActiveState() {
+  if (!presetHost) return;
+  const active = getActivePresetId();
+  presetHost.querySelectorAll("button[data-preset-id]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.presetId === active);
+  });
+}
+
+function getActivePresetId() {
+  const current = JSON.stringify(state.eeAngles.map((triple) => triple.map((v) => Number(v.toFixed(2)))));
+  for (const preset of GESTURE_PRESETS) {
+    const candidate = JSON.stringify(preset.apply().map((triple) => triple.map((v) => Number(v.toFixed(2)))));
+    if (candidate === current) return preset.id;
+  }
+  return null;
 }
 
 function selectJoint(index) {
@@ -833,17 +1120,22 @@ makeSliders(poseRoot, poseCount, "p", state.pose, scheduleSolve, "poseSliderInpu
 makeSliders(betaRoot, betaCount, "b", state.betas, scheduleSolve, "betaSliderInputs");
 renderJointTree();
 renderSelectedJointPanel();
+renderPresetButtons();
 initThree();
 
 document.getElementById("btnResetSelected").addEventListener("click", () => {
   state.eeAngles[state.selectedJoint] = [0, 0, 0];
   renderSelectedJointPanel();
+  updatePresetActiveState();
+  markCustomPose();
   scheduleCompose();
 });
 
 document.getElementById("btnResetEe").addEventListener("click", () => {
   state.eeAngles = Array.from({ length: eeCount }, () => [0, 0, 0]);
   renderSelectedJointPanel();
+  updatePresetActiveState();
+  markCustomPose();
   scheduleCompose();
 });
 
