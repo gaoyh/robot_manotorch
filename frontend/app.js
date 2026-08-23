@@ -49,6 +49,11 @@ const ARTICULATION_LABELS = [
   "Pinky / tip",
 ];
 
+// Frontend display order: thumb -> index -> middle -> ring -> pinky.
+// Backend AxisLayerFK order: index -> middle -> pinky -> ring -> thumb.
+const displayToBackendArticulation = [0, 13, 14, 15, 1, 2, 3, 4, 5, 6, 10, 11, 12, 7, 8, 9];
+const backendToDisplayArticulation = [0, 4, 5, 6, 7, 8, 9, 13, 14, 15, 10, 11, 12, 1, 2, 3];
+
 const JOINT_TREE = [
   { index: 1, label: "Thumb / base", children: [
     { index: 2, label: "Thumb / middle", children: [] },
@@ -178,13 +183,14 @@ function flattenEeAngles() {
 function setEeAnglesFromFlat(flat) {
   if (!Array.isArray(flat)) return;
   const values = flat.flat ? flat.flat() : flat;
-  const next = [];
-  for (let i = 0; i < eeCount; i++) {
-    next.push([
-      Number(values[i * 3 + 0] ?? 0),
-      Number(values[i * 3 + 1] ?? 0),
-      Number(values[i * 3 + 2] ?? 0),
-    ]);
+  const next = Array.from({ length: eeCount }, () => [0, 0, 0]);
+  for (let backendIndex = 0; backendIndex < eeCount; backendIndex++) {
+    const displayIndex = backendToDisplayArticulation[backendIndex] ?? backendIndex;
+    next[displayIndex] = [
+      Number(values[backendIndex * 3 + 0] ?? 0),
+      Number(values[backendIndex * 3 + 1] ?? 0),
+      Number(values[backendIndex * 3 + 2] ?? 0),
+    ];
   }
   state.eeAngles = next;
 }
@@ -288,7 +294,8 @@ function getAxisVector(axisIndex, jointIndex) {
   const axes = state.latestAxes;
   if (!axes) return null;
   const axisName = ["back", "up", "left"][axisIndex];
-  const values = axes[axisName]?.[jointIndex];
+  const backendIndex = displayToBackendArticulation[jointIndex] ?? jointIndex;
+  const values = axes[axisName]?.[backendIndex];
   if (!values) return null;
   const vec = new THREE.Vector3(values[0], values[1], values[2]);
   if (vec.lengthSq() === 0) return null;
@@ -447,10 +454,14 @@ function scheduleCompose() {
 }
 
 async function composeOnce() {
+  const payloadAngles = Array.from({ length: eeCount }, (_, backendIndex) => {
+    const displayIndex = backendToDisplayArticulation[backendIndex] ?? backendIndex;
+    return state.eeAngles[displayIndex] || [0, 0, 0];
+  }).flat();
   sendStream({
     type: "compose",
     side: state.side,
-    ee_angles: flattenEeAngles(),
+    ee_angles: payloadAngles,
   });
 }
 
