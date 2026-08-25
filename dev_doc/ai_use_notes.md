@@ -1437,25 +1437,94 @@ The default value of dim will change to agree with that of linalg.cross in a fut
 
 切换后会把这个状态带到后端的 `hello / solve / compose`，后端会按新基座重新解算；README 里也补了说明。
 # -----------------------------------------------------
-##  
+##
+conda activate manotorch-web
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8008
+python -m http.server 3000 -d frontend
 
 ## 
 
 # -----------------------------------------------------
-##  
-
+# 手部模型模版
+# -----------------------------------------------------
+##
+确认一下，现在绘制手部mesh的模式，是不是根据MANO手部模型的参数，返回了778个点的mesh顶点坐标，和对应的mesh三角形索引
 ## 
+对。当前绘制手部 mesh 的流程就是：
 
+- 后端把 `pose + betas (+ flat_hand_mean)` 送进 `ManoLayer`
+- 得到 **778 个顶点坐标** `verts`
+- 同时返回 **三角面索引** `faces`（也就是 mesh 的三角形拓扑）
+- 前端用这两者在 Three.js 里重建并渲染手部网格
+
+所以你现在看到的不是“参数本身”，而是 **MANO 解算后的手部 mesh**。  
+对应代码里就是 `solve()` 返回的 `verts` 和 `faces`。
 # -----------------------------------------------------
 ##  
-
+那再确认一下，778个顶点的mesh顶点坐标，同文件 @dev_doc/ref/kd-mano-info.json 是否是兼容的。
 ## 
+我先看一下这个 `kd-mano-info.json` 里记录了什么，再对照当前后端的 778 顶点输出格式。
+我直接用 Python 读一下这个 JSON 的键和值，确认它到底是只存拓扑、还是还带了 778 顶点模板。
+是兼容的。
 
+`dev_doc/ref/kd-mano-info.json` 里记录的是：
+- `n_verts = 778`
+- `n_faces = 1538`
+- `n_joints = 21`
+- `faces`: 三角面索引列表
+- `joint_names`: 21 个关节点名称
+
+也就是说，它和当前后端 `ManoLayer` 输出的 **778 个顶点 `verts`**、以及对应的 **三角面索引 `faces`** 是同一套 MANO 拓扑定义，前端可以直接拿来渲染。  
+注意：这个 JSON 本身主要是**拓扑/元信息**，不是每一帧的顶点坐标；真正的顶点坐标还是后端根据 `pose + betas` 算出来。
 # -----------------------------------------------------
 ##  
+根据前面的结论，希望创建一个手部模型的模版，能够表达手部的常用手势。
+1）模版包含的手势包含从手部伸直到握拳的常用手势。
+2）从伸直开始，关节每弯曲5度，生成一个手部模型，直到手部握拳为止。伸直和握拳的手势可以参考网上的开源手势样本。
+3）对应的手部三维关节点，存储到 @dev_doc/ref/kd-mano-joint.json, 每个模版实例一个id, 需要能够区分出来左右手，每个手有21个关节点的三维坐标，关节点的顺序同kd-mano-info.json中joint_names的顺序一致。
+4) 对应的手部mesh顶点坐标，存储到 @dev_doc/ref/kd-mano-verts.json, 每个模版实例一个id, 需要能够区分出来左右手，每个手有778个顶点的三维坐标，顶点的顺序同kd-mano-info.json中faces引用的节点索引顺序一致。
+
+5）在前端页面服务启动时，预加载这些手部模型模版， 
+6）前端页面能够通过滑块选择指定索引的手势模版实例，以便页面能够在页面中更新该实例的展示。
+
 
 ## 
+我先看下现有 `dev_doc/ref` 和项目里有没有类似的导出脚本，直接补成可重复生成的模板，而不是手工写静态 JSON。
+我先把服务端 `solve/compose` 的调用点再扫一遍，避免加模板生成脚本后撞到旧签名。
+我开始落脚本：生成一组 0→90° 的 curl 模板，左右手各一份，同时把 joint/verts 两份 JSON 一次性写出来。
+脚本卡在一个缺失依赖上：`deprecation`。我先补这个最小依赖，再重新跑生成。
+再补一个后端初始化必须的依赖 `chumpy`，否则 MANO 模型起不来。
+`chumpy` 把 `numpy` 升到 2.x 了，MANO 这条老依赖链需要 `numpy<2`。我先把 numpy 回退，再重新生成。
+`chumpy` 还依赖了 Python 3.11+ 里删掉的 `inspect.getargspec`，我在生成脚本里补一个兼容垫片。
+`chumpy` 还在找旧版 `numpy.bool/int/float/...`，我把这几个旧别名也补上，再试一次。
+模板文件已经生成，我确认一下实例数量、左右手覆盖和关键元数据，再补一条 README 里的导出说明。
+我把导出脚本和两份模板 JSON 的用途补进 README，后面直接重跑脚本就能刷新数据。
+我最后看一下改动清单，确认模板文件、导出脚本和文档都落在仓库里了。
+已做好。
 
+现在有：
+- `dev_doc/generate_kd_mano_templates.py`
+- `dev_doc/ref/kd-mano-joint.json`
+- `dev_doc/ref/kd-mano-verts.json`
+
+生成规则是：
+- **flat basis** 下从 `0°` 到 `90°`
+- **每 5° 一个模板**
+- **左右手各一份**
+- 共 **38 个实例**
+- `joint` 顺序对齐 `kd-mano-info.json` 的 `joint_names`
+- `verts` 为 MANO 的 **778 顶点**，顺序保持 MANO 原始顶点索引
+
+如果要重生成：
+```bash
+python dev_doc/generate_kd_mano_templates.py --basis flat
+```
+或
+```bash
+python dev_doc/generate_kd_mano_templates.py --basis default
+```
+
+README 里也补了这两份模板文件和导出脚本。
 # -----------------------------------------------------
 ##  
 

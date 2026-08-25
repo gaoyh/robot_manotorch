@@ -133,6 +133,16 @@ The UI also includes a **Basis** switch:
 
 Switching the basis reinitializes the backend solve/compose basis, so presets should be reselected after toggling if you want to compare the two modes directly.
 
+The template export script is:
+
+```bash
+python dev_doc/generate_kd_mano_templates.py --basis flat
+```
+
+It writes:
+- `dev_doc/ref/kd-mano-joint.json`
+- `dev_doc/ref/kd-mano-verts.json`
+
 <br />
 <br />
 
